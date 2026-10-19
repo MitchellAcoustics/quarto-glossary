@@ -1,6 +1,6 @@
 # Quarto-glossary
 
-This extension provides shortcodes for [glossary](https://github.com/debruine/quarto-glossary) in quarto.
+This extension provides a shortcode for defining terms and building glossaries in Quarto. It is a fork of [debruine/quarto-glossary](https://github.com/debruine/quarto-glossary) that also works in PDF and Word, and adds grouped glossary files, aliases and glossary tables. See the [changelog](https://github.com/MitchellAcoustics/quarto-glossary/blob/main/NEWS.md) for what changed.
 
 
 ## Setup
@@ -8,10 +8,10 @@ This extension provides shortcodes for [glossary](https://github.com/debruine/qu
 ### Installing
 
 ```sh
-quarto install extension debruine/quarto-glossary
+quarto add MitchellAcoustics/quarto-glossary
 ```
 
-This will install the extension under the `_extensions` subdirectory. If you're using version control, you will want to check in this directory.
+This will install the extension under the `_extensions` subdirectory. If you're using version control, you will want to check in this directory. It needs Quarto 1.4.0 or later.
 
 
 ### Glossary file
@@ -129,13 +129,13 @@ Add a `display` argument if you want to display something different than the ter
 
 ### Popups 
 
-The default is "click", which allows you to use styled html in the popup (see [Styles](#styles) below).
+The "click" option shows a styled popup when the term is clicked. This site sets it as the default in its `_quarto.yml`, and the package default is "hover".
 
 `{{{< glossary alpha popup="click" >}}}`
 
 {{< glossary alpha popup="click" >}}
 
-The "hover" option uses the web browser's built-in tooltip styles, so you can't use html in the definitions. However, you can now set the click event to open a link. 
+The "hover" option uses the web browser's built-in tooltip, which shows plain text only. You can wrap the term in a link, which opens when it is clicked. 
 
 `[{{{< glossary alpha popup="hover" >}}}](https://psyteachr.github.io/glossary/a#alpha)`
 
@@ -267,5 +267,29 @@ at the top. In a flat table all the terms are sorted together.
 #### Table styling
 
 In HTML the table uses Bootstrap's striped table style, and band rows have the
-`glossary-group` class. In PDF the bands are shaded with the `glossarygroup`
-colour, which needs xcolor's `table` option; without it, bands are unshaded.
+`glossary-group` class, which you can restyle with the CSS variables
+`--glossary-group-bg` and `--glossary-group-color`.
+
+In PDF the bands are shaded with the `glossarygroup` colour (light grey by
+default). Shading needs xcolor's `table` option; with Quarto's default template,
+turn it on with `classoption: [table]` under `format: pdf:`. Without it the
+document still builds and the bands are unshaded. To change the colour, add
+`\colorlet{glossarygroup}{gray!25}` to `include-in-header`. The extension leaves
+row striping and padding in PDF to you, because it would affect every table in
+your document; the README has a recipe.
+
+#### Options reference
+
+| Option | Values | What it does |
+|---|---|---|
+| `path` | file path (default `glossary.yml`) | The glossary file. |
+| `popup` | `"hover"` (default), `"click"`, `"none"` | HTML only. |
+| `display` | text | Show different text from the term. |
+| `def` | text | Use this definition instead of the file's. |
+| `link` | `"#section"` | Non-HTML formats: link every term to this section. |
+| `nonhtml` | `"text"`, `"link"`, `"footnote"` | Non-HTML formats: how a term appears. |
+| `definition` | `true` | Insert the term's definition as text. |
+| `table` | `true` | Insert the glossary as a table (or list). |
+| `groups` | `"A, B, ungrouped"` | With `table`: only these groups. |
+| `layout` | `"grouped"` (default), `"flat"`, `"list"` | With `table`: how to lay it out. |
+| `sort` | `"file"` (default), `"alpha"` | With `table`: file order or alphabetical. |

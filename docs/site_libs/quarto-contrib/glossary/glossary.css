@@ -38,19 +38,16 @@
   border-color: #333 transparent transparent transparent;
 }
 
-/* glossary table styles */
-.glossary_table td {
-  vertical-align: top;
+/* Group band rows in {{< glossary table=true >}} tables. Bootstrap paints
+   striped and hovered cells with an inset box-shadow, so the band overrides
+   that rather than background-color. Set the variables to restyle it. */
+.table > tbody > tr > td.glossary-group {
+  box-shadow: inset 0 0 0 9999px var(--glossary-group-bg, #e2e2e2);
+  color: var(--glossary-group-color, inherit);
 }
 
-.glossary_table td:first-child {
-  padding-right: 1em;
-}
-
-.glossary_table tr {
-  border-bottom: 1px solid #ddd;
-}
-
-.glossary_table tr:nth-child(even) {
-  background-color: #99999933;
+/* "Also: ..." line listing a term's aliases in glossary tables and lists. */
+.glossary-aliases {
+  font-size: 0.85em;
+  font-weight: normal;
 }

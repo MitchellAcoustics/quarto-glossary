@@ -103,6 +103,26 @@ return {
 
 ["glossary"] = function(args, kwargs, meta)
 
+  -- definition mode (all formats): return the term's definition from the
+  -- glossary file as inline text, so chapters can reuse the glossary wording
+  if kwExists(kwargs, "definition") then
+    local options = mergeOptions(kwargs, meta)
+    local term = string.lower(pandoc.utils.stringify(args[1]))
+    local metafile = io.open(options.path, 'r')
+    local content = "---\n" .. metafile:read("*a") .. "\n---\n"
+    metafile:close()
+    for key, value in pairs(pandoc.read(content, "markdown").meta) do
+      if string.lower(key) == term then
+        if pandoc.utils.type(value) == "Blocks" then
+          return pandoc.utils.blocks_to_inlines(value)
+        end
+        return value
+      end
+    end
+    quarto.log.warning("glossary: no definition found for '" .. term .. "'")
+    return pandoc.Inlines({})
+  end
+
   -- non-HTML formats (e.g. PDF): no popups, so render the display text inline,
   -- optionally linked to the glossary section given by the `link` option
   if not quarto.doc.isFormat("html:js") then

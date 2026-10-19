@@ -47,6 +47,13 @@ Group names are not terms themselves, and grouping doesn't change how you use
 a term: `{{{< glossary alpha >}}}` works whichever group `alpha` is in. Only one
 level of grouping is supported.
 
+#### Duplicate terms
+
+Terms are looked up by name alone, so use each term name only once across all
+groups. If a term is defined more than once with different wording, the first
+definition in the file is used for popups and `definition=true`, and the extension
+logs one warning for that term.
+
 ### Defaults
 
 In the YAML header of your document, or the _quarto.yml file for your book or website, add the following defaults:
@@ -163,11 +170,43 @@ gets a shaded band row naming it, with ungrouped terms first.
 #### Only some groups
 
 Use `groups` to include only some groups, as a comma-separated list. Names are
-not case-sensitive, and groups keep their file order.
+not case-sensitive, and an unknown name gives a warning. Terms that aren't under
+any group are included when you don't use `groups`; to select them, or to mix
+them with named groups, use the reserved name `ungrouped`.
 
 `{{{< glossary table=true groups="effect sizes" >}}}`
 
 {{< glossary table=true groups="effect sizes" >}}
+
+`{{{< glossary table=true groups="ungrouped, hypothesis testing" >}}}`
+
+{{< glossary table=true groups="ungrouped, hypothesis testing" >}}
+
+Don't name a group "Ungrouped" in your glossary file: `groups="ungrouped"` would
+select it together with the ungrouped terms, and the extension warns about it.
+
+#### Layout
+
+`layout` is `"grouped"` (the default, with a band per group) or `"flat"`, which
+lists the selected terms together with no bands.
+
+`{{{< glossary table=true layout="flat" groups="effect sizes, hypothesis testing" >}}}`
+
+{{< glossary table=true layout="flat" groups="effect sizes, hypothesis testing" >}}
+
+#### Order
+
+`sort` is `"file"` (the default, the order written in the glossary file) or
+`"alpha"`. Alphabetical sorting ignores case. In a grouped table the group names
+are sorted first, then the terms within each group, with ungrouped terms staying
+at the top. In a flat table all the terms are sorted together.
+
+`{{{< glossary table=true sort="alpha" >}}}`
+
+{{< glossary table=true sort="alpha" >}}
+
+`layout` and `sort` can also be set as defaults under `glossary:` in your
+`_quarto.yml`. An invalid value gives a warning and uses the default.
 
 #### Table styling
 

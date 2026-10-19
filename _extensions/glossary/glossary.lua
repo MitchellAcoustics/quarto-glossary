@@ -20,29 +20,6 @@ local function kwExists(kwargs, keyword)
     return false
 end
 
----Read the glossary file into a {lowercased term: definition} table.
----Entries may be grouped under group names (see glossaryTable), so any
----mapping value is treated as a group and its entries are read instead; group
----names are not themselves terms.
-local function loadGlossary(path)
-  local metafile = io.open(path, 'r')
-  local content = "---\n" .. metafile:read("*a") .. "\n---\n"
-  metafile:close()
-
-  local glossary = {}
-  local function add(entries)
-    for key, value in pairs(entries) do
-      if pandoc.utils.type(value) == "table" then
-        add(value)
-      else
-        glossary[string.lower(key)] = value
-      end
-    end
-  end
-  add(pandoc.read(content, "markdown").meta)
-  return glossary
-end
-
 ---Return the line number where `key` is defined in the glossary text, so
 ---entries can keep their file order (pandoc's metadata reader does not).
 local function keyLine(lines, key)
@@ -94,6 +71,31 @@ local function loadGlossaryGroups(path)
   return groups
 end
 
+-- Duplicate terms already warned about, so each is reported once per render.
+local warnedDuplicates = {}
+
+---Read the glossary file into a {lowercased term: definition} table.
+---Entries may be grouped under group names (see glossaryTable); group names are
+---not themselves terms. Lookups are by term alone, so if a term appears in more
+---than one group, the first definition in the file wins.
+local function loadGlossary(path)
+  local glossary = {}
+  for _, group in ipairs(loadGlossaryGroups(path)) do
+    for _, entry in ipairs(group.entries) do
+      local term = string.lower(entry.key)
+      if glossary[term] == nil then
+        glossary[term] = entry.value
+      elseif pandoc.utils.stringify(glossary[term]) ~= pandoc.utils.stringify(entry.value)
+          and not warnedDuplicates[path .. "\0" .. term] then
+        warnedDuplicates[path .. "\0" .. term] = true
+        quarto.log.warning("glossary: '" .. entry.key .. "' is defined more than once in "
+          .. path .. " with different wording; popups and definition=true use the first")
+      end
+    end
+  end
+  return glossary
+end
+
 ---Convert a glossary definition (metadata value) to blocks for a table cell.
 local function toBlocks(value)
   local kind = pandoc.utils.type(value)
@@ -109,8 +111,53 @@ local function cell(blocks, colspan, attr)
   return pandoc.Cell(blocks, pandoc.AlignDefault, 1, colspan or 1, attr or pandoc.Attr())
 end
 
----Build the glossary as one table, with a full-width band row naming each
----group. `only` optionally limits it to a list of lowercased group names.
+-- Name that selects terms not under any group, e.g. groups="ungrouped, Platform".
+local UNGROUPED = "ungrouped"
+
+---Sort a list of items in place, case-insensitively, by the field `key`.
+local function sortAlpha(items, key)
+  table.sort(items, function(a, b) return string.lower(a[key]) < string.lower(b[key]) end)
+end
+
+---Return the glossary's groups, limited to `only` (a set of lowercased group
+---names, or nil for all) and sorted alphabetically if `alpha` is true:
+---group names first, then the terms within each group. Ungrouped terms stay
+---first, ahead of any named group.
+local function selectGroups(path, only, alpha)
+  local selected = {}
+  for _, group in ipairs(loadGlossaryGroups(path)) do
+    local name = group.name and string.lower(group.name) or UNGROUPED
+    if only == nil or only[name] then
+      table.insert(selected, {name = group.name, entries = {table.unpack(group.entries)}})
+    end
+  end
+  if alpha then
+    local first = selected[1] and selected[1].name == nil and table.remove(selected, 1)
+    sortAlpha(selected, "name")
+    if first then table.insert(selected, 1, first) end
+    for _, group in ipairs(selected) do sortAlpha(group.entries, "key") end
+  end
+  return selected
+end
+
+local function termRow(entry, keepWithPrevious)
+  local term = pandoc.Inlines({pandoc.Strong(entry.key)})
+  if keepWithPrevious then
+    -- \nopagebreak is a \noalign, so it must open the row after the band.
+    term:insert(1, pandoc.RawInline("latex", "\\nopagebreak"))
+  end
+  return pandoc.Row({cell({pandoc.Plain(term)}), cell(toBlocks(entry.value))})
+end
+
+local function tableBody(rows)
+  return {attr = pandoc.Attr(), body = rows, head = {}, row_head_columns = 0}
+end
+
+---Build the glossary as one table. `only` optionally limits it to a set of
+---lowercased group names. With `layout` "grouped", each group gets a
+---full-width band row naming it (ungrouped terms come first, with no band);
+---with "flat", the selected terms are listed together with no bands. `alpha`
+---sorts alphabetically instead of keeping file order.
 ---
 ---In the PDF the band is shaded with the `glossarygroup` colour (override it
 ---with \colorlet{glossarygroup}{...} in the document header), xcolor's row
@@ -119,29 +166,32 @@ end
 ---`table` option; without it the band is simply unshaded. In HTML the band
 ---gets the `glossary-group` class (styled in glossary.css), and each group is
 ---its own <tbody> so Bootstrap's striping restarts after every band.
-local function glossaryTable(path, only)
+local function glossaryTable(path, only, layout, alpha)
   local bandLatex = "\\ifdefined\\cellcolor\\cellcolor{glossarygroup}\\fi"
     .. "\\ifdefined\\rownum\\global\\rownum=2\\relax\\fi"
+  local groups = selectGroups(path, only, alpha)
 
   local bodies = {}
-  for _, group in ipairs(loadGlossaryGroups(path)) do
-    local wanted = only == nil
-      or (group.name ~= nil and only[string.lower(group.name)])
-    if wanted then
+  if layout == "flat" then
+    local entries = {}
+    for _, group in ipairs(groups) do
+      for _, entry in ipairs(group.entries) do table.insert(entries, entry) end
+    end
+    if alpha then sortAlpha(entries, "key") end
+    local rows = {}
+    for _, entry in ipairs(entries) do table.insert(rows, termRow(entry, false)) end
+    table.insert(bodies, tableBody(rows))
+  else
+    for _, group in ipairs(groups) do
       local rows = {}
       if group.name ~= nil then
         local band = pandoc.Plain({pandoc.RawInline("latex", bandLatex), pandoc.Strong(group.name)})
         table.insert(rows, pandoc.Row({cell({band}, 2, pandoc.Attr("", {"glossary-group"}))}))
       end
       for i, entry in ipairs(group.entries) do
-        local term = pandoc.Inlines({pandoc.Strong(entry.key)})
-        if i == 1 and group.name ~= nil then
-          -- \nopagebreak is a \noalign, so it must open the row after the band.
-          term:insert(1, pandoc.RawInline("latex", "\\nopagebreak"))
-        end
-        table.insert(rows, pandoc.Row({cell({pandoc.Plain(term)}), cell(toBlocks(entry.value))}))
+        table.insert(rows, termRow(entry, i == 1 and group.name ~= nil))
       end
-      table.insert(bodies, {attr = pandoc.Attr(), body = rows, head = {}, row_head_columns = 0})
+      table.insert(bodies, tableBody(rows))
     end
   end
 
@@ -214,18 +264,39 @@ return {
     return pandoc.Inlines({})
   end
 
-  -- table mode (all formats): the whole glossary file as one table, optionally
-  -- limited to some of its groups, e.g. groups="Hypothesis testing, Effect sizes"
+  -- table mode (all formats): the whole glossary file as one table. Options:
+  --   groups="Platform, ungrouped"  only these groups ("ungrouped" selects
+  --                                 terms not under any group)
+  --   layout="grouped" | "flat"     band each group, or list terms together
+  --   sort="file" | "alpha"         file order, or alphabetical (group names
+  --                                 first, then terms within each group)
   if kwExists(kwargs, "table") then
     local options = mergeOptions(kwargs, meta)
+    local layout = options.layout or "grouped"
+    local sort = options.sort or "file"
+    if layout ~= "grouped" and layout ~= "flat" then
+      quarto.log.warning("glossary: layout should be 'grouped' or 'flat', not '" .. layout .. "'")
+      layout = "grouped"
+    end
+    if sort ~= "file" and sort ~= "alpha" then
+      quarto.log.warning("glossary: sort should be 'file' or 'alpha', not '" .. sort .. "'")
+      sort = "file"
+    end
+
     local only = nil
-    if kwExists(kwargs, "groups") then
-      local known = {}
+    if options.groups ~= nil then
+      local known = {[UNGROUPED] = true}
       for _, group in ipairs(loadGlossaryGroups(options.path)) do
-        if group.name ~= nil then known[string.lower(group.name)] = true end
+        if group.name ~= nil then
+          if string.lower(group.name) == UNGROUPED then
+            quarto.log.warning("glossary: a group named '" .. group.name .. "' in " .. options.path
+              .. " is selected together with the ungrouped terms by groups=\"" .. UNGROUPED .. "\"")
+          end
+          known[string.lower(group.name)] = true
+        end
       end
       only = {}
-      for name in pandoc.utils.stringify(kwargs.groups):gmatch("[^,]+") do
+      for name in options.groups:gmatch("[^,]+") do
         name = string.lower(name:match("^%s*(.-)%s*$"))
         if not known[name] then
           quarto.log.warning("glossary: no group named '" .. name .. "' in " .. options.path)
@@ -240,7 +311,7 @@ return {
       quarto.doc.include_text("in-header",
         "\\AtBeginDocument{\\ifdefined\\providecolor\\providecolor{glossarygroup}{gray}{0.85}\\fi}")
     end
-    return pandoc.Blocks({glossaryTable(options.path, only)})
+    return pandoc.Blocks({glossaryTable(options.path, only, layout, sort == "alpha")})
   end
 
   -- non-HTML formats (e.g. PDF): no popups, so render the display text inline,

@@ -104,7 +104,7 @@ The "hover" option uses the web browser's built-in tooltip styles, so you can't 
 
 [{{< glossary alpha popup="hover" >}}](https://psyteachr.github.io/glossary/a#alpha)
 
-Set popup to "none" if you want to add the definition to the glossary table, but not use a popup.
+Set popup to "none" to mark a term without a popup.
 
 `{{{< glossary alpha popup="none" >}}}`
 
@@ -129,18 +129,6 @@ term gives a warning and inserts nothing.
 
 {{< glossary SESOI definition=true >}}
 
-### Add to Table
-
-If you don't want to add a glossary item to the table, set `add_to_table=false`.
-
-`{{{< glossary SESOI add_to_table=true >}}}`
-
-{{< glossary SESOI add_to_table=true >}}
-
-`{{{< glossary R def="The best language" add_to_table=false >}}}`
-
-{{< glossary R def="The best language" add_to_table=false >}}
-
 ### PDF and other formats
 
 Popups only work in HTML. In other formats, such as PDF and Word, a glossary term
@@ -163,8 +151,26 @@ in PDF it links to the Table section below.
 
 ### Table
 
-If you set `table=true`, you will get a glossary table with all the terms you've defined on this page.
+Set `table=true` to get a table of every term in the glossary file. It works in
+any format, keeps term case and Markdown formatting from the file, and lists terms
+in the order they are written in the file. If the file is grouped, each group
+gets a shaded band row naming it, with ungrouped terms first.
 
 `{{{< glossary table=true >}}}`
 
 {{< glossary table=true >}}
+
+#### Only some groups
+
+Use `groups` to include only some groups, as a comma-separated list. Names are
+not case-sensitive, and groups keep their file order.
+
+`{{{< glossary table=true groups="effect sizes" >}}}`
+
+{{< glossary table=true groups="effect sizes" >}}
+
+#### Table styling
+
+In HTML the table uses Bootstrap's striped table style, and band rows have the
+`glossary-group` class. In PDF the bands are shaded with the `glossarygroup`
+colour, which needs xcolor's `table` option; without it, bands are unshaded.

@@ -27,6 +27,26 @@ p-value: |
   The probability of the observed data, or more extreme data, if the null hypothesis is true. The lower the p-value, the higher the test statistic, and less likely it is to observe the data if the null hypothesis is true.
 ```
 
+#### Grouping terms
+
+Terms can be grouped under a heading by nesting them one level deep. Terms that
+aren't under a group can sit alongside the groups.
+
+``` yaml
+html: |
+  An ungrouped term.
+
+Hypothesis testing:
+  alpha: |
+    The threshold chosen in Neyman-Pearson hypothesis testing...
+  p-value: |
+    The probability of the observed data...
+```
+
+Group names are not terms themselves, and grouping doesn't change how you use
+a term: `{{{< glossary alpha >}}}` works whichever group `alpha` is in. Only one
+level of grouping is supported.
+
 ### Defaults
 
 In the YAML header of your document, or the _quarto.yml file for your book or website, add the following defaults:

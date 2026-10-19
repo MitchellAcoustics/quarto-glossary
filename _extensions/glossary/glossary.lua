@@ -52,6 +52,29 @@ local function read_metadata_file(fname)
   return metadata
 end
 
+---Read the glossary file into a {lowercased term: definition} table.
+---Entries may be grouped under group names, so any mapping value is treated as
+---a group and its entries are read instead; group names are not themselves
+---terms.
+local function loadGlossary(path)
+  local metafile = io.open(path, 'r')
+  local content = "---\n" .. metafile:read("*a") .. "\n---\n"
+  metafile:close()
+
+  local glossary = {}
+  local function add(entries)
+    for key, value in pairs(entries) do
+      if pandoc.utils.type(value) == "table" then
+        add(value)
+      else
+        glossary[string.lower(key)] = value
+      end
+    end
+  end
+  add(pandoc.read(content, "markdown").meta)
+  return glossary
+end
+
 local function readGlossary(path)
   local f = io.open(path, "r")
   if not f then
@@ -108,16 +131,12 @@ return {
   if kwExists(kwargs, "definition") then
     local options = mergeOptions(kwargs, meta)
     local term = string.lower(pandoc.utils.stringify(args[1]))
-    local metafile = io.open(options.path, 'r')
-    local content = "---\n" .. metafile:read("*a") .. "\n---\n"
-    metafile:close()
-    for key, value in pairs(pandoc.read(content, "markdown").meta) do
-      if string.lower(key) == term then
-        if pandoc.utils.type(value) == "Blocks" then
-          return pandoc.utils.blocks_to_inlines(value)
-        end
-        return value
+    local value = loadGlossary(options.path)[term]
+    if value ~= nil then
+      if pandoc.utils.type(value) == "Blocks" then
+        return pandoc.utils.blocks_to_inlines(value)
       end
+      return value
     end
     quarto.log.warning("glossary: no definition found for '" .. term .. "'")
     return pandoc.Inlines({})
@@ -176,15 +195,8 @@ return {
   if kwExists(kwargs, "def") then
     def = pandoc.utils.stringify(kwargs.def)
   else
-    local metafile = io.open(options.path, 'r')
-    local content = "---\n" .. metafile:read("*a") .. "\n---\n"
-    metafile:close()
-    local glossary = pandoc.read(content, "markdown").meta
-    for key, value in pairs(glossary) do
-      glossary[string.lower(key)] = value
-    end
-    -- quarto.log.output()
-    if kwExists(glossary, term) then
+    local glossary = loadGlossary(options.path)
+    if glossary[term] ~= nil then
       def = pandoc.utils.stringify(glossary[term])
     end
   end

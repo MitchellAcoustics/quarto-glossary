@@ -45,3 +45,9 @@
   box-shadow: inset 0 0 0 9999px var(--glossary-group-bg, #e2e2e2);
   color: var(--glossary-group-color, inherit);
 }
+
+/* "Also: ..." line listing a term's aliases in glossary tables and lists. */
+.glossary-aliases {
+  font-size: 0.85em;
+  font-weight: normal;
+}

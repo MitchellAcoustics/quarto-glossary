@@ -20,6 +20,16 @@ local function kwExists(kwargs, keyword)
     return false
 end
 
+-- Warnings already shown, so a problem with the glossary file is reported once
+-- per render rather than on every shortcode that reads it.
+local warned = {}
+local function warnOnce(key, message)
+  if not warned[key] then
+    warned[key] = true
+    quarto.log.warning("glossary: " .. message)
+  end
+end
+
 ---Escape text for use in HTML attribute values and element content, so a
 ---definition or display text containing quotes, `<` or `&` can't break out of
 ---the popup markup.
@@ -58,8 +68,34 @@ local function inFileOrder(entries, lines)
   return items
 end
 
+---Turn a raw glossary item into an entry {key, value = the definition,
+---aliases = list of strings, line}. An item is either a plain definition or a
+---mapping with a `definition` key and optionally `aliases` (other names for the
+---same term). A mapping without `definition` is a group, not an entry.
+local function asEntry(item)
+  local entry = {key = item.key, value = item.value, aliases = {}, line = item.line}
+  if pandoc.utils.type(item.value) == "table" and item.value.definition ~= nil then
+    entry.value = item.value.definition
+    local aliases = item.value.aliases
+    if pandoc.utils.type(aliases) == "List" then
+      for _, alias in ipairs(aliases) do
+        table.insert(entry.aliases, pandoc.utils.stringify(alias))
+      end
+    elseif aliases ~= nil then
+      table.insert(entry.aliases, pandoc.utils.stringify(aliases))
+    end
+  end
+  return entry
+end
+
+---Whether a raw glossary item is a group (a mapping without `definition`).
+local function isGroup(item)
+  return pandoc.utils.type(item.value) == "table" and item.value.definition == nil
+end
+
 ---Read the glossary file as a list of groups in file order, each
----{name = group name, or nil for ungrouped terms, entries = {{key, value}}}.
+---{name = group name, or nil for ungrouped terms, entries = {entry}} (see
+---asEntry).
 local function loadGlossaryGroups(path)
   local metafile = io.open(path, 'r')
   local text = metafile:read("*a")
@@ -72,10 +108,19 @@ local function loadGlossaryGroups(path)
   local groups = {}
   local ungrouped = {}
   for _, item in ipairs(inFileOrder(pandoc.read("---\n" .. text .. "\n---\n", "markdown").meta, lines)) do
-    if pandoc.utils.type(item.value) == "table" then
-      table.insert(groups, {name = item.key, entries = inFileOrder(item.value, lines)})
+    if isGroup(item) then
+      local entries = {}
+      for _, inner in ipairs(inFileOrder(item.value, lines)) do
+        if isGroup(inner) then
+          warnOnce("nested\0" .. path .. "\0" .. item.key .. "\0" .. inner.key,
+            "'" .. inner.key .. "' in group '" .. item.key .. "' in " .. path
+            .. " has no `definition`, so it looks like a nested group; only one level of grouping is supported")
+        end
+        table.insert(entries, asEntry(inner))
+      end
+      table.insert(groups, {name = item.key, entries = entries})
     else
-      table.insert(ungrouped, item)
+      table.insert(ungrouped, asEntry(item))
     end
   end
   if #ungrouped > 0 then
@@ -84,33 +129,51 @@ local function loadGlossaryGroups(path)
   return groups
 end
 
--- Duplicate terms already warned about, so each is reported once per render.
-local warnedDuplicates = {}
-
----Read the glossary file into a {lowercased term: definition} table.
+---Read the glossary file into a {lowercased name: definition} table.
 ---Entries may be grouped under group names (see glossaryTable); group names are
----not themselves terms. Lookups are by term alone, so if a term appears in more
----than one group, the first definition in the file wins.
+---not themselves terms. Lookups are by name alone, so if a term appears in more
+---than one group, the first definition in the file wins. An entry's aliases
+---look up its definition too, but never replace another entry's name. Also
+---returns a {lowercased name: entry} table, so a name can be mapped back to its
+---canonical term.
 local function loadGlossary(path)
   local glossary = {}
-  for _, group in ipairs(loadGlossaryGroups(path)) do
+  local owner = {}
+  local groups = loadGlossaryGroups(path)
+
+  for _, group in ipairs(groups) do
     for _, entry in ipairs(group.entries) do
       local term = string.lower(entry.key)
       if glossary[term] == nil then
         glossary[term] = entry.value
-      elseif pandoc.utils.stringify(glossary[term]) ~= pandoc.utils.stringify(entry.value)
-          and not warnedDuplicates[path .. "\0" .. term] then
-        warnedDuplicates[path .. "\0" .. term] = true
-        quarto.log.warning("glossary: '" .. entry.key .. "' is defined more than once in "
+        owner[term] = entry
+      elseif pandoc.utils.stringify(glossary[term]) ~= pandoc.utils.stringify(entry.value) then
+        warnOnce("dup\0" .. path .. "\0" .. term, "'" .. entry.key .. "' is defined more than once in "
           .. path .. " with different wording; popups and definition=true use the first")
       end
     end
   end
-  return glossary
+
+  for _, group in ipairs(groups) do
+    for _, entry in ipairs(group.entries) do
+      for _, alias in ipairs(entry.aliases) do
+        local name = string.lower(alias)
+        if glossary[name] == nil then
+          glossary[name] = entry.value
+          owner[name] = entry
+        elseif owner[name] ~= entry then
+          warnOnce("alias\0" .. path .. "\0" .. name, "the alias '" .. alias .. "' of '" .. entry.key .. "' in " .. path
+            .. " is already used by '" .. owner[name].key .. "', which is kept")
+        end
+      end
+    end
+  end
+  return glossary, owner
 end
 
 -- Terms that already have a footnote in this document (nonhtml="footnote"), so
--- only a term's first use gets one. Each file of a book is its own document.
+-- only a term's first use gets one, under any of its aliases. Each file of a
+-- book is its own document.
 local footnoted = {}
 -- Whether the missing-`link` warning for nonhtml="link" has been shown.
 local warnedNoLink = false
@@ -159,8 +222,32 @@ local function selectGroups(path, only, alpha)
   return selected
 end
 
+---Return the line "Also: alias, alias" in smaller text as inlines, or nil if
+---the entry has no aliases. The `glossary-aliases` class styles it in HTML (see
+---glossary.css); in LaTeX it is set in \small, and in other formats it is just
+---emphasised.
+local function aliasLine(entry)
+  if #entry.aliases == 0 then return nil end
+  return pandoc.Inlines({
+    pandoc.RawInline("latex", "{\\small "),
+    pandoc.Span(
+      {pandoc.Emph(pandoc.Inlines("Also: " .. table.concat(entry.aliases, ", ")))},
+      pandoc.Attr("", {"glossary-aliases"})),
+    pandoc.RawInline("latex", "}"),
+  })
+end
+
 local function termRow(entry, keepWithPrevious)
   local term = pandoc.Inlines({pandoc.Strong(entry.key)})
+  local aliases = aliasLine(entry)
+  if aliases ~= nil then
+    -- In a LaTeX table a LineBreak makes pandoc wrap the cell in a minipage,
+    -- which would hide the \nopagebreak that has to open the row (see below),
+    -- so use a raw \newline there.
+    term:insert(quarto.doc.isFormat("latex") and pandoc.RawInline("latex", "\\newline ")
+      or pandoc.LineBreak())
+    term:extend(aliases)
+  end
   if keepWithPrevious then
     -- \nopagebreak is a \noalign, so it must open the row after the band.
     term:insert(1, pandoc.RawInline("latex", "\\nopagebreak"))
@@ -238,7 +325,13 @@ local function glossaryList(path, only, alpha)
   for _, group in ipairs(selectGroups(path, only, alpha)) do
     local items = {}
     for _, entry in ipairs(group.entries) do
-      table.insert(items, {pandoc.Inlines(entry.key), {toBlocks(entry.value)}})
+      -- The aliases go at the start of the definition: a line break inside a
+      -- LaTeX description label is lost, which would run them into the term.
+      local definition = pandoc.Blocks({})
+      local aliases = aliasLine(entry)
+      if aliases ~= nil then definition:insert(pandoc.Plain(aliases)) end
+      definition:extend(toBlocks(entry.value))
+      table.insert(items, {pandoc.Inlines(entry.key), {definition}})
     end
     local content = pandoc.Blocks({})
     if group.name ~= nil then
@@ -333,7 +426,7 @@ return {
       for _, group in ipairs(loadGlossaryGroups(options.path)) do
         if group.name ~= nil then
           if string.lower(group.name) == UNGROUPED then
-            quarto.log.warning("glossary: a group named '" .. group.name .. "' in " .. options.path
+            warnOnce("ungrouped\0" .. options.path, "a group named '" .. group.name .. "' in " .. options.path
               .. " is selected together with the ungrouped terms by groups=\"" .. UNGROUPED .. "\"")
           end
           known[string.lower(group.name)] = true
@@ -343,7 +436,7 @@ return {
       for name in options.groups:gmatch("[^,]+") do
         name = string.lower(name:match("^%s*(.-)%s*$"))
         if not known[name] then
-          quarto.log.warning("glossary: no group named '" .. name .. "' in " .. options.path)
+          warnOnce("nogroup\0" .. options.path .. "\0" .. name, "no group named '" .. name .. "' in " .. options.path)
         end
         only[name] = true
       end
@@ -394,16 +487,20 @@ return {
         warnedNoLink = true
         quarto.log.warning("glossary: nonhtml='link' needs a `link` option; showing plain text")
       end
-    elseif mode == "footnote" and not footnoted[term] then
+    elseif mode == "footnote" then
       local blocks
+      local key = term
       if kwExists(kwargs, "def") then
         blocks = pandoc.Blocks({pandoc.Plain(pandoc.Inlines(pandoc.utils.stringify(kwargs.def)))})
       else
-        local value = loadGlossary(options.path)[term]
-        if value ~= nil then blocks = toBlocks(value) end
+        local glossary, owner = loadGlossary(options.path)
+        if glossary[term] ~= nil then
+          blocks = toBlocks(glossary[term])
+          key = string.lower(owner[term].key)
+        end
       end
-      if blocks ~= nil and #blocks > 0 then
-        footnoted[term] = true
+      if blocks ~= nil and #blocks > 0 and not footnoted[key] then
+        footnoted[key] = true
         text:insert(pandoc.Note(blocks))
       end
     end

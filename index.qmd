@@ -47,6 +47,37 @@ Group names are not terms themselves, and grouping doesn't change how you use
 a term: `{{{< glossary alpha >}}}` works whichever group `alpha` is in. Only one
 level of grouping is supported.
 
+#### Aliases
+
+A term can have other names, such as synonyms or abbreviations, that mean the
+same thing. Write the term as a mapping with a `definition` and a list of
+`aliases` (a single alias can be written without the list):
+
+``` yaml
+Hypothesis testing:
+  alpha:
+    definition: |
+      The threshold chosen in Neyman-Pearson hypothesis testing...
+    aliases: [alpha level, significance level]
+```
+
+Using an alias in the text gives the same definition as the term, in popups, with
+`definition=true` and in `nonhtml="footnote"` (where the term and its aliases
+share one footnote). In tables and lists the term is listed once, with an
+"Also: ..." line in smaller text, and alphabetical sorting uses the term, not its
+aliases.
+
+`{{{< glossary "significance level" >}}}`
+
+{{< glossary "significance level" >}}
+
+An entry is a term if it is a mapping with a `definition`, and a group if it is a
+mapping without one, so `definition` and `aliases` can't be used as term names.
+An alias that is already the name of a term, or an alias of an earlier term, is
+ignored with a warning: the term keeps it. A mapping without `definition` inside a
+group is read as a term with a nested definition and gives a warning, because
+only one level of grouping is supported.
+
 #### Duplicate terms
 
 Terms are looked up by name alone, so use each term name only once across all

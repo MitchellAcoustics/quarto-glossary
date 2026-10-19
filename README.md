@@ -77,6 +77,9 @@ single shortcode, where they override the defaults.
 
 The documentation site (source in [index.qmd](index.qmd)) has an example of each.
 
+Quarto drops an option whose quoted value starts with a space, without any warning,
+so write `groups="A, B"`, not `groups=" A, B"`.
+
 ### Glossary file rules
 
 * An entry is either `term: definition`, or a mapping with a `definition` and

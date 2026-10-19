@@ -43,29 +43,59 @@ local function escapeHtml(text)
   }))
 end
 
----Return the line number where `key` is defined in the glossary text, so
----entries can keep their file order (pandoc's metadata reader does not).
-local function keyLine(lines, key)
-  for i, line in ipairs(lines) do
-    local text = line:gsub("^%s+", "")
-    for _, form in ipairs({key, '"' .. key .. '"', "'" .. key .. "'"}) do
-      if text:sub(1, #form + 1) == form .. ":" then
-        return i
+---Whether a line of the glossary file is blank or only a comment.
+local function isBlank(line)
+  return line:match("^%s*$") ~= nil or line:match("^%s*#") ~= nil
+end
+
+---Return the line number where `key` is defined as a key of the mapping whose
+---keys are indented by exactly `indent` columns, searching lines `from` to
+---`to`. Matching on the indentation and range means a name used in more than
+---one place (a term defined in two groups, say) is found in the right one, and
+---that definition text or nested keys can't be mistaken for a key.
+local function keyLine(lines, key, indent, from, to)
+  for i = from, to do
+    local line = lines[i]
+    if #line:match("^%s*") == indent then
+      local text = line:sub(indent + 1)
+      for _, form in ipairs({key, '"' .. key .. '"', "'" .. key .. "'"}) do
+        if text:sub(1, #form + 1) == form .. ":" then
+          return i
+        end
       end
     end
   end
   return math.huge
 end
 
----Return `entries` (a {key: value} table) as a list of {key, value} pairs in
----file order.
-local function inFileOrder(entries, lines)
+---Return `entries` (a {key: value} table, the keys of one mapping in the file)
+---as a list of {key, value, line} items in file order. See keyLine for `indent`,
+---`from` and `to`.
+local function inFileOrder(entries, lines, indent, from, to)
   local items = {}
   for key, value in pairs(entries) do
-    table.insert(items, {key = key, value = value, line = keyLine(lines, key)})
+    table.insert(items, {key = key, value = value, line = keyLine(lines, key, indent, from, to)})
   end
   table.sort(items, function(a, b) return a.line < b.line end)
   return items
+end
+
+---For a group whose key is on line `line`, return the indentation of its entries
+---and the last line of its block (the line before the next top-level key).
+local function groupBlock(lines, line)
+  local indent, last = nil, #lines
+  for i = line + 1, #lines do
+    if not isBlank(lines[i]) then
+      local n = #lines[i]:match("^%s*")
+      if n == 0 then
+        last = i - 1
+        break
+      elseif indent == nil then
+        indent = n
+      end
+    end
+  end
+  return indent or 0, last
 end
 
 ---Turn a raw glossary item into an entry {key, value = the definition,
@@ -107,10 +137,12 @@ local function loadGlossaryGroups(path)
 
   local groups = {}
   local ungrouped = {}
-  for _, item in ipairs(inFileOrder(pandoc.read("---\n" .. text .. "\n---\n", "markdown").meta, lines)) do
+  local top = pandoc.read("---\n" .. text .. "\n---\n", "markdown").meta
+  for _, item in ipairs(inFileOrder(top, lines, 0, 1, #lines)) do
     if isGroup(item) then
       local entries = {}
-      for _, inner in ipairs(inFileOrder(item.value, lines)) do
+      local indent, last = groupBlock(lines, item.line)
+      for _, inner in ipairs(inFileOrder(item.value, lines, indent, item.line + 1, last)) do
         if isGroup(inner) then
           warnOnce("nested\0" .. path .. "\0" .. item.key .. "\0" .. inner.key,
             "'" .. inner.key .. "' in group '" .. item.key .. "' in " .. path

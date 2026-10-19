@@ -227,8 +227,7 @@ end
 local function mergeOptions(userOptions, meta)
   local defaultOptions = {
     path = "glossary.yml",
-    popup = "hover",
-    show = true
+    popup = "hover"
   }
 
   -- override with meta values first

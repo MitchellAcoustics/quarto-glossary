@@ -17,4 +17,3 @@ format:
 glossary:
   path: glossary.yml
   popup: click
-  show: true

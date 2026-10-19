@@ -62,10 +62,9 @@ In the YAML header of your document, or the _quarto.yml file for your book or we
 glossary:
   path: glossary.yml
   popup: click
-  show: true
 ```
 
-Set path to the path to your glossary YAML file, popup to "click", "hover", or "none", and show to true or false. You can change these defaults for any individual inline glossary item.
+Set `path` to the path to your glossary YAML file, and `popup` to "click", "hover", or "none". You can change these defaults for any individual inline glossary item.
 
 
 ## Examples

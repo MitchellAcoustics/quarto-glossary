@@ -20,6 +20,19 @@ local function kwExists(kwargs, keyword)
     return false
 end
 
+---Escape text for use in HTML attribute values and element content, so a
+---definition or display text containing quotes, `<` or `&` can't break out of
+---the popup markup.
+local function escapeHtml(text)
+  return (text:gsub("[&<>\"']", {
+    ["&"] = "&amp;",
+    ["<"] = "&lt;",
+    [">"] = "&gt;",
+    ['"'] = "&quot;",
+    ["'"] = "&#39;",
+  }))
+end
+
 ---Return the line number where `key` is defined in the glossary text, so
 ---entries can keep their file order (pandoc's metadata reader does not).
 local function keyLine(lines, key)
@@ -352,6 +365,9 @@ return {
       def = pandoc.utils.stringify(glossary[term])
     end
   end
+
+  def = escapeHtml(def)
+  display = escapeHtml(display)
 
   if options.popup == "hover" then
     glosstext = "<button class='glossary' title='" .. def .."'>" .. display .. "</button>"

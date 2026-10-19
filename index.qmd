@@ -202,12 +202,22 @@ select it together with the ungrouped terms, and the extension warns about it.
 
 #### Layout
 
-`layout` is `"grouped"` (the default, with a band per group) or `"flat"`, which
-lists the selected terms together with no bands.
+`layout` is `"grouped"` (the default, with a band per group), `"flat"`, which
+lists the selected terms together with no bands, or `"list"`, which uses
+definition lists instead of a table.
 
 `{{{< glossary table=true layout="flat" groups="effect sizes, hypothesis testing" >}}}`
 
 {{< glossary table=true layout="flat" groups="effect sizes, hypothesis testing" >}}
+
+A definition list has one list per group, with the group name as a bold line
+above it (ungrouped terms come first, with no label). The labels are not
+headings, so they don't appear in the table of contents. It suits narrow pages
+and outputs where a table doesn't fit well, and uses the `<dl>` element in HTML.
+
+`{{{< glossary table=true layout="list" >}}}`
+
+{{< glossary table=true layout="list" >}}
 
 #### Order
 

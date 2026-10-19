@@ -228,6 +228,29 @@ local function glossaryTable(path, only, layout, alpha)
   )
 end
 
+---Build the glossary as definition lists, one per group, with the group name
+---as a bold line above it (no label for ungrouped terms, which come first).
+---`only` and `alpha` work as they do for glossaryTable. Group labels are
+---paragraphs rather than headings so they don't add entries to the table of
+---contents. In the PDF, \nopagebreak keeps a label with its list.
+local function glossaryList(path, only, alpha)
+  local blocks = pandoc.Blocks({})
+  for _, group in ipairs(selectGroups(path, only, alpha)) do
+    local items = {}
+    for _, entry in ipairs(group.entries) do
+      table.insert(items, {pandoc.Inlines(entry.key), {toBlocks(entry.value)}})
+    end
+    local content = pandoc.Blocks({})
+    if group.name ~= nil then
+      content:insert(pandoc.Para({pandoc.Strong(group.name)}))
+      content:insert(pandoc.RawBlock("latex", "\\nopagebreak[4]"))
+    end
+    content:insert(pandoc.DefinitionList(items))
+    blocks:insert(pandoc.Div(content, pandoc.Attr("", {"glossary-list"})))
+  end
+  return blocks
+end
+
 ---Merge user provided options with defaults
 ---@param userOptions table
 local function mergeOptions(userOptions, meta)
@@ -285,15 +308,18 @@ return {
   -- table mode (all formats): the whole glossary file as one table. Options:
   --   groups="Platform, ungrouped"  only these groups ("ungrouped" selects
   --                                 terms not under any group)
-  --   layout="grouped" | "flat"     band each group, or list terms together
+  --   layout="grouped" | "flat" | "list"
+  --                                 band each group, list terms together with
+  --                                 no bands, or use definition lists with the
+  --                                 group names as labels
   --   sort="file" | "alpha"         file order, or alphabetical (group names
   --                                 first, then terms within each group)
   if kwExists(kwargs, "table") then
     local options = mergeOptions(kwargs, meta)
     local layout = options.layout or "grouped"
     local sort = options.sort or "file"
-    if layout ~= "grouped" and layout ~= "flat" then
-      quarto.log.warning("glossary: layout should be 'grouped' or 'flat', not '" .. layout .. "'")
+    if layout ~= "grouped" and layout ~= "flat" and layout ~= "list" then
+      quarto.log.warning("glossary: layout should be 'grouped', 'flat' or 'list', not '" .. layout .. "'")
       layout = "grouped"
     end
     if sort ~= "file" and sort ~= "alpha" then
@@ -321,6 +347,10 @@ return {
         end
         only[name] = true
       end
+    end
+
+    if layout == "list" then
+      return glossaryList(options.path, only, sort == "alpha")
     end
 
     if quarto.doc.isFormat("html") then

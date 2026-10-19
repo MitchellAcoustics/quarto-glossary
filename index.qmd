@@ -137,10 +137,16 @@ term gives a warning and inserts nothing.
 
 ### PDF and other formats
 
-Popups only work in HTML. In other formats, such as PDF and Word, a glossary term
-is rendered as its display text. Set the `link` option to make every term link to
-a glossary section instead, for example a chapter of a book that holds the
-glossary table.
+Popups only work in HTML. In other formats, such as PDF and Word, the `nonhtml`
+option controls how a glossary term appears:
+
+| `nonhtml` | Result |
+|---|---|
+| `"text"` | The display text alone. |
+| `"link"` | The display text, linked to the section given by the `link` option, for example a chapter of a book that holds the glossary table. |
+| `"footnote"` | The display text, with the definition as a footnote on the term's first use in the document. |
+
+The default is `"link"` if `link` is set, and `"text"` otherwise.
 
 ``` yaml
 glossary:
@@ -148,12 +154,22 @@ glossary:
   link: "#sec-glossary"
 ```
 
-`link` can also be set on a single term. In HTML this example is a normal popup;
-in PDF it links to the Table section below.
+Both options can also be set on a single term. In HTML these examples are normal
+popups; in PDF the first links to the Table section below, and the second gets a
+footnote on its first use but not on its second.
 
 `{{{< glossary power link="#table" >}}}`
 
 {{< glossary power link="#table" >}}
+
+`{{{< glossary p-value nonhtml="footnote" >}}}`
+
+{{< glossary p-value nonhtml="footnote" >}}, and again: {{< glossary p-value nonhtml="footnote" >}}.
+
+A term that isn't in the glossary file gets no footnote unless you give it a
+`def`, which is then used for the note. In a book, each chapter is its own
+document, so a term is footnoted once per chapter. An unrecognised value gives a
+warning and uses the default.
 
 ### Table
 

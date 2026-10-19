@@ -109,6 +109,12 @@ local function loadGlossary(path)
   return glossary
 end
 
+-- Terms that already have a footnote in this document (nonhtml="footnote"), so
+-- only a term's first use gets one. Each file of a book is its own document.
+local footnoted = {}
+-- Whether the missing-`link` warning for nonhtml="link" has been shown.
+local warnedNoLink = false
+
 ---Convert a glossary definition (metadata value) to blocks for a table cell.
 local function toBlocks(value)
   local kind = pandoc.utils.type(value)
@@ -326,18 +332,50 @@ return {
     return pandoc.Blocks({glossaryTable(options.path, only, layout, sort == "alpha")})
   end
 
-  -- non-HTML formats (e.g. PDF): no popups, so render the display text inline,
-  -- optionally linked to the glossary section given by the `link` option
+  -- non-HTML formats (e.g. PDF, Word): no popups, so render the display text
+  -- inline. How it is dressed up depends on the `nonhtml` option:
+  --   "text"      the display text alone
+  --   "link"      the display text linked to the section given by `link`
+  --   "footnote"  the display text, with the definition as a footnote on the
+  --               term's first use in the document
+  -- The default is "link" if `link` is set, otherwise "text".
   if not quarto.doc.isFormat("html:js") then
     local options = mergeOptions(kwargs, meta)
+    local term = string.lower(pandoc.utils.stringify(args[1]))
     local display = pandoc.utils.stringify(args[1])
     if kwExists(kwargs, "display") then
       display = pandoc.utils.stringify(kwargs.display)
     end
 
+    local hasLink = options.link ~= nil and options.link ~= ""
+    local mode = options.nonhtml
+    if mode == nil then
+      mode = hasLink and "link" or "text"
+    elseif mode ~= "text" and mode ~= "link" and mode ~= "footnote" then
+      quarto.log.warning("glossary: nonhtml should be 'text', 'link' or 'footnote', not '" .. tostring(mode) .. "'")
+      mode = hasLink and "link" or "text"
+    end
+
     local text = pandoc.Inlines(display)
-    if options.link ~= nil and options.link ~= "" then
-      return pandoc.Link(text, options.link)
+    if mode == "link" then
+      if hasLink then
+        return pandoc.Link(text, options.link)
+      elseif not warnedNoLink then
+        warnedNoLink = true
+        quarto.log.warning("glossary: nonhtml='link' needs a `link` option; showing plain text")
+      end
+    elseif mode == "footnote" and not footnoted[term] then
+      local blocks
+      if kwExists(kwargs, "def") then
+        blocks = pandoc.Blocks({pandoc.Plain(pandoc.Inlines(pandoc.utils.stringify(kwargs.def)))})
+      else
+        local value = loadGlossary(options.path)[term]
+        if value ~= nil then blocks = toBlocks(value) end
+      end
+      if blocks ~= nil and #blocks > 0 then
+        footnoted[term] = true
+        text:insert(pandoc.Note(blocks))
+      end
     end
     return text
   end

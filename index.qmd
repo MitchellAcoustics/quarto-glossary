@@ -110,6 +110,26 @@ If you don't want to add a glossary item to the table, set `add_to_table=false`.
 
 {{< glossary R def="The best language" add_to_table=false >}}
 
+### PDF and other formats
+
+Popups only work in HTML. In other formats, such as PDF and Word, a glossary term
+is rendered as its display text. Set the `link` option to make every term link to
+a glossary section instead, for example a chapter of a book that holds the
+glossary table.
+
+``` yaml
+glossary:
+  path: glossary.yml
+  link: "#sec-glossary"
+```
+
+`link` can also be set on a single term. In HTML this example is a normal popup;
+in PDF it links to the Table section below.
+
+`{{{< glossary power link="#table" >}}}`
+
+{{< glossary power link="#table" >}}
+
 ### Table
 
 If you set `table=true`, you will get a glossary table with all the terms you've defined on this page.

@@ -103,9 +103,24 @@ return {
 
 ["glossary"] = function(args, kwargs, meta)
 
-  -- this will only run for HTML documents
+  -- non-HTML formats (e.g. PDF): no popups, so render the display text inline,
+  -- optionally linked to the glossary section given by the `link` option
   if not quarto.doc.isFormat("html:js") then
-    return pandoc.Null()
+    if kwExists(kwargs, "table") then
+      return pandoc.Null()
+    end
+
+    local options = mergeOptions(kwargs, meta)
+    local display = pandoc.utils.stringify(args[1])
+    if kwExists(kwargs, "display") then
+      display = pandoc.utils.stringify(kwargs.display)
+    end
+
+    local text = pandoc.Inlines(display)
+    if options.link ~= nil and options.link ~= "" then
+      return pandoc.Link(text, options.link)
+    end
+    return text
   end
 
   addHTMLDeps()

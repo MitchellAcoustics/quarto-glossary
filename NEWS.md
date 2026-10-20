@@ -42,6 +42,12 @@ This version is a fork of [debruine/quarto-glossary](https://github.com/debruine
   `<` or `&` in a definition or `display` text could be read as markup.
 * Terms defined more than once now use the first definition, with a warning if
   the wording differs, instead of an arbitrary one.
+* Bad input gives a single warning instead of crashing or repeating. This
+  covers a missing glossary file, unknown `popup`, `layout`, `sort` or
+  `nonhtml` values, `groups=true` or `link=true`, terms with no definition,
+  and entries whose `definition` key is misspelled.
+* Group bands can be read in dark themes, and `layout="list"` loads the
+  extension's CSS.
 
 ### Issues from the original repository addressed
 

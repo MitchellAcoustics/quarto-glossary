@@ -126,7 +126,9 @@ end
 ---Read the glossary file as a list of groups in file order, each
 ---{name = group name, or nil for ungrouped terms, entries = {entry}} (see
 ---asEntry).
+local groupsCache = {}
 local function loadGlossaryGroups(path)
+  if groupsCache[path] ~= nil then return groupsCache[path] end
   local metafile = io.open(path, 'r')
   local text = metafile:read("*a")
   metafile:close()
@@ -158,6 +160,7 @@ local function loadGlossaryGroups(path)
   if #ungrouped > 0 then
     table.insert(groups, 1, {name = nil, entries = ungrouped})
   end
+  groupsCache[path] = groups
   return groups
 end
 
@@ -203,12 +206,23 @@ local function loadGlossary(path)
   return glossary, owner
 end
 
+---Return `value` if it is one of `allowed`, otherwise warn and return `default`.
+local function choice(name, value, allowed, default)
+  for _, option in ipairs(allowed) do
+    if value == option then return value end
+  end
+  local quoted = {}
+  for i, option in ipairs(allowed) do quoted[i] = "'" .. option .. "'" end
+  local last = table.remove(quoted)
+  quarto.log.warning("glossary: " .. name .. " should be " .. table.concat(quoted, ", ")
+    .. (#quoted > 0 and " or " or "") .. last .. ", not '" .. tostring(value) .. "'")
+  return default
+end
+
 -- Terms that already have a footnote in this document (nonhtml="footnote"), so
 -- only a term's first use gets one, under any of its aliases. Each file of a
 -- book is its own document.
 local footnoted = {}
--- Whether the missing-`link` warning for nonhtml="link" has been shown.
-local warnedNoLink = false
 
 ---Convert a glossary definition (metadata value) to blocks for a table cell.
 local function toBlocks(value)
@@ -441,16 +455,8 @@ return {
   --                                 first, then terms within each group)
   if kwExists(kwargs, "table") then
     local options = mergeOptions(kwargs, meta)
-    local layout = options.layout or "grouped"
-    local sort = options.sort or "file"
-    if layout ~= "grouped" and layout ~= "flat" and layout ~= "list" then
-      quarto.log.warning("glossary: layout should be 'grouped', 'flat' or 'list', not '" .. layout .. "'")
-      layout = "grouped"
-    end
-    if sort ~= "file" and sort ~= "alpha" then
-      quarto.log.warning("glossary: sort should be 'file' or 'alpha', not '" .. sort .. "'")
-      sort = "file"
-    end
+    local layout = choice("layout", options.layout or "grouped", {"grouped", "flat", "list"}, "grouped")
+    local sort = choice("sort", options.sort or "file", {"file", "alpha"}, "file")
 
     local only = nil
     if options.groups ~= nil then
@@ -474,13 +480,15 @@ return {
       end
     end
 
+    if quarto.doc.isFormat("html") then
+      addHTMLDeps()
+    end
+
     if layout == "list" then
       return glossaryList(options.path, only, sort == "alpha")
     end
 
-    if quarto.doc.isFormat("html") then
-      addHTMLDeps()
-    elseif quarto.doc.isFormat("latex") then
+    if quarto.doc.isFormat("latex") then
       quarto.doc.include_text("in-header",
         "\\AtBeginDocument{\\ifdefined\\providecolor\\providecolor{glossarygroup}{gray}{0.85}\\fi}")
     end
@@ -506,18 +514,16 @@ return {
     local mode = options.nonhtml
     if mode == nil then
       mode = hasLink and "link" or "text"
-    elseif mode ~= "text" and mode ~= "link" and mode ~= "footnote" then
-      quarto.log.warning("glossary: nonhtml should be 'text', 'link' or 'footnote', not '" .. tostring(mode) .. "'")
-      mode = hasLink and "link" or "text"
+    else
+      mode = choice("nonhtml", mode, {"text", "link", "footnote"}, hasLink and "link" or "text")
     end
 
     local text = pandoc.Inlines(display)
     if mode == "link" then
       if hasLink then
         return pandoc.Link(text, options.link)
-      elseif not warnedNoLink then
-        warnedNoLink = true
-        quarto.log.warning("glossary: nonhtml='link' needs a `link` option; showing plain text")
+      else
+        warnOnce("nolink", "nonhtml='link' needs a `link` option; showing plain text")
       end
     elseif mode == "footnote" then
       local blocks
@@ -565,6 +571,7 @@ return {
   def = escapeHtml(def)
   display = escapeHtml(display)
 
+  local glosstext
   if options.popup == "hover" then
     glosstext = "<button class='glossary' title='" .. def .."'>" .. display .. "</button>"
   elseif options.popup == "click" then

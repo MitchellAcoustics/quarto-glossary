@@ -130,6 +130,11 @@ local groupsCache = {}
 local function loadGlossaryGroups(path)
   if groupsCache[path] ~= nil then return groupsCache[path] end
   local metafile = io.open(path, 'r')
+  if metafile == nil then
+    warnOnce("nofile\0" .. path, "cannot open the glossary file " .. path)
+    groupsCache[path] = {}
+    return groupsCache[path]
+  end
   local text = metafile:read("*a")
   metafile:close()
   local lines = pandoc.List()
@@ -142,6 +147,14 @@ local function loadGlossaryGroups(path)
   local top = pandoc.read("---\n" .. text .. "\n---\n", "markdown").meta
   for _, item in ipairs(inFileOrder(top, lines, 0, 1, #lines)) do
     if isGroup(item) then
+      for key in pairs(item.value) do
+        local lower = string.lower(key)
+        if lower == "definition" or lower == "aliases" then
+          warnOnce("typo\0" .. path .. "\0" .. item.key, "'" .. item.key .. "' in " .. path
+            .. " has the key '" .. key .. "' but no `definition`, so it is read as a group, not a term")
+          break
+        end
+      end
       local entries = {}
       local indent, last = groupBlock(lines, item.line)
       for _, inner in ipairs(inFileOrder(item.value, lines, indent, item.line + 1, last)) do
@@ -171,7 +184,9 @@ end
 ---look up its definition too, but never replace another entry's name. Also
 ---returns a {lowercased name: entry} table, so a name can be mapped back to its
 ---canonical term.
+local glossaryCache = {}
 local function loadGlossary(path)
+  if glossaryCache[path] ~= nil then return table.unpack(glossaryCache[path]) end
   local glossary = {}
   local owner = {}
   local groups = loadGlossaryGroups(path)
@@ -203,6 +218,7 @@ local function loadGlossary(path)
       end
     end
   end
+  glossaryCache[path] = {glossary, owner}
   return glossary, owner
 end
 
@@ -214,7 +230,7 @@ local function choice(name, value, allowed, default)
   local quoted = {}
   for i, option in ipairs(allowed) do quoted[i] = "'" .. option .. "'" end
   local last = table.remove(quoted)
-  quarto.log.warning("glossary: " .. name .. " should be " .. table.concat(quoted, ", ")
+  warnOnce("choice\0" .. name .. "\0" .. tostring(value), name .. " should be " .. table.concat(quoted, ", ")
     .. (#quoted > 0 and " or " or "") .. last .. ", not '" .. tostring(value) .. "'")
   return default
 end
@@ -401,20 +417,14 @@ local function mergeOptions(userOptions, meta)
   -- override with meta values first
   if meta.glossary ~= nil then
     for k, v in pairs(meta.glossary) do
-      local value = pandoc.utils.stringify(v)
-      if value == 'true' then value = true end
-      if value == 'false' then value = false end
-      defaultOptions[k] = value
+      defaultOptions[k] = pandoc.utils.stringify(v)
     end
   end
 
   -- then override with function keyword values
   if userOptions ~= nil then
     for k, v in pairs(userOptions) do
-      local value = pandoc.utils.stringify(v)
-      if value == 'true' then value = true end
-      if value == 'false' then value = false end
-      defaultOptions[k] = value
+      defaultOptions[k] = pandoc.utils.stringify(v)
     end
   end
 
@@ -440,7 +450,7 @@ return {
       end
       return value
     end
-    quarto.log.warning("glossary: no definition found for '" .. term .. "'")
+    warnOnce("nodef\0" .. term, "no definition found for '" .. term .. "'")
     return pandoc.Inlines({})
   end
 
@@ -535,6 +545,8 @@ return {
         if glossary[term] ~= nil then
           blocks = toBlocks(glossary[term])
           key = string.lower(owner[term].key)
+        else
+          warnOnce("nodef\0" .. term, "no definition found for '" .. term .. "'")
         end
       end
       if blocks ~= nil and #blocks > 0 and not footnoted[key] then
@@ -565,18 +577,21 @@ return {
     local glossary = loadGlossary(options.path)
     if glossary[term] ~= nil then
       def = pandoc.utils.stringify(glossary[term])
+    else
+      warnOnce("nodef\0" .. term, "no definition found for '" .. term .. "'")
     end
   end
 
   def = escapeHtml(def)
   display = escapeHtml(display)
 
+  local popup = choice("popup", options.popup, {"hover", "click", "none"}, "hover")
   local glosstext
-  if options.popup == "hover" then
+  if popup == "hover" then
     glosstext = "<button class='glossary' title='" .. def .."'>" .. display .. "</button>"
-  elseif options.popup == "click" then
+  elseif popup == "click" then
     glosstext = "<button class='glossary'><span class='def'>" .. def .."</span>" .. display .. "</button>"
-  elseif options.popup == "none" then
+  else
     glosstext = "<button class='glossary'>" .. display .. "</button>"
   end
 
